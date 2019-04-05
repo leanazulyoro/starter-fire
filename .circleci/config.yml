@@ -1,0 +1,170 @@
+defaults: &defaults
+  working_directory: ~/repo
+  docker:
+  - image: circleci/node:8.11
+
+version: 2
+jobs:
+  checkout_code:
+    <<: *defaults
+    steps:
+      - checkout
+
+      - persist_to_workspace:
+          root: ~/repo
+          paths: .
+
+  bundle_dependencies:
+    <<: *defaults
+
+    steps:
+      - attach_workspace:
+          at: ~/repo
+
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "package.json" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run: yarn
+
+      - save_cache:
+          paths:
+          - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+
+
+  build:
+    <<: *defaults
+
+    steps:
+      - attach_workspace:
+          at: ~/repo
+
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "package.json" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run: yarn build
+
+      - persist_to_workspace:
+          root: ./
+          paths:
+          - public
+
+
+  test:
+    <<: *defaults
+
+    steps:
+      - attach_workspace:
+          at: ~/repo
+
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "package.json" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run: yarn test
+
+  release:
+    <<: *defaults
+    steps:
+    - attach_workspace:
+        at: ~/repo
+
+    - restore_cache:
+        keys:
+        - v1-dependencies-{{ checksum "package.json" }}
+        # fallback to using the latest cache if no exact match is found
+        - v1-dependencies-
+    - run:
+        command: |
+          if [ ! -f ~/.ssh/known_hosts ]; then
+            mkdir ~/.ssh
+            touch ~/.ssh/known_hosts
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+          fi
+
+    - run: npx semantic-release
+
+  deploy:
+    <<: *defaults
+    steps:
+    - attach_workspace:
+        at: ~/repo
+
+    - restore_cache:
+        keys:
+        - v1-dependencies-{{ checksum "package.json" }}
+        # fallback to using the latest cache if no exact match is found
+        - v1-dependencies-
+
+    - run:
+        name: 'Deploy to Firebase Hosting'
+        command: './node_modules/.bin/firebase deploy --token=$FIREBASE_TOKEN'
+
+workflows:
+  version: 2
+  build-and-test:
+    jobs:
+    - checkout_code
+    - bundle_dependencies:
+        requires:
+        - checkout_code
+    - test:
+        requires:
+        - bundle_dependencies
+    - build:
+        requires:
+        - bundle_dependencies
+
+  release-and-deploy:
+    jobs:
+    - checkout_code:
+        filters:
+          tags:
+            ignore: /.*/
+          branches:
+            only: master
+    - bundle_dependencies:
+        requires:
+        - checkout_code
+        filters:
+          tags:
+            ignore: /.*/
+          branches:
+            only: master
+    - build:
+        requires:
+        - bundle_dependencies
+        filters:
+          tags:
+            ignore: /.*/
+          branches:
+            only: master
+#   - hold:
+#       type: approval
+#       requires:
+#       - release
+    - release:
+        requires:
+        - build
+    #   - hold
+        filters:
+          tags:
+            ignore: /.*/
+          branches:
+            only: master
+    - deploy:
+        requires:
+        - release
+        filters:
+          tags:
+            ignore: /.*/
+          branches:
+            only: master
