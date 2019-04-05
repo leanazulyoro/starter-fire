@@ -11,11 +11,20 @@ const Charmander = () => (
   </>
 )
 
+
+const Charmeleon = () => (
+  <>
+    <h1>Charmeleon #005</h1>
+    <img src={charmeleon} />
+  </>
+)
+
+
 class App extends Component {
   render() {
     return (
       <div className="App">
-        <Charmander />
+        <Charmeleon />
       </div>
     );
   }
